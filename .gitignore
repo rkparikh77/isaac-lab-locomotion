@@ -1,0 +1,14 @@
+checkpoints/
+results/*.log
+results/policy_videos/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+*.egg-info/
+dist/
+build/
+.idea/
+.vscode/settings.json
+wandb/
