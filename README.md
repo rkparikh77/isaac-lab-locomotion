@@ -12,7 +12,23 @@ Four-phase terrain curriculum training of an AnymalC quadruped using PPO (Isaac 
 
 ![Ablation bar chart](results/ablation_figure.png)
 
-![Trajectory comparison](results/trajectory_comparison.png)
+![Trajectory hero](results/trajectory_hero.png)
+
+---
+
+## Demo Videos
+
+3D stick-figure animations rendered from recorded policy trajectories (300 frames @ 30 fps each).
+
+| Terrain | Video |
+|---------|-------|
+| Flat | `results/videos/flat_demo.mp4` |
+| Slopes | `results/videos/slopes_demo.mp4` |
+| Stairs | `results/videos/stairs_demo.mp4` |
+| Contact-Aware | `results/videos/contact_aware_demo.mp4` |
+| **2×2 comparison** | `results/videos/comparison.mp4` |
+
+Generated with `scripts/animate_robot.py` (matplotlib Agg + imageio/libx264). Foot contact state shown in green (loaded) / red (swing). Body orientation from recorded quaternions; leg positions from approximate forward kinematics (thigh=0.26 m, shank=0.26 m).
 
 ---
 
@@ -94,16 +110,18 @@ Leave-one-out: each condition trains for 300 iterations with one term disabled (
 
 ## Evaluation
 
-100 evaluation episodes per terrain, greedy policy (mean action, no noise), no curriculum.
+100 evaluation episodes per terrain, greedy policy (deterministic action, no noise), 256 parallel envs, no curriculum. Checkpoint loaded via `OnPolicyRunner.load()` + `get_inference_policy()`.
 
 | Terrain | Mean Reward | ± Std | Max | Min | Mean Ep. Length |
 |---------|-------------|-------|-----|-----|----------------|
-| Flat | 5.22 | 4.66 | 18.70 | −1.35 | 1000.0 |
-| Slopes | 6.99 | 4.96 | 23.15 | −1.13 | 987.8 |
-| Stairs | 7.10 | 6.21 | 26.56 | −1.47 | 981.8 |
-| Contact-Aware (v2) | 6.30 | 4.59 | 20.99 | −1.07 | 981.4 |
+| Flat | 22.07 | 5.30 | 26.37 | −1.52 | 942.4 |
+| Slopes | 0.62 | 0.85 | 2.34 | −2.11 | 86.4 |
+| Stairs | 4.10 | 4.17 | 14.60 | −13.20 | 313.1 |
+| Contact-Aware (v2) | −0.22 | 0.58 | 1.63 | −1.74 | 42.5 |
 
-Evaluation rewards are measured using only the base Isaac Lab reward (no contact-aware wrapper), so all four rows are on the same scale. The stair policy achieves the highest max (26.56) reflecting occasional high-quality traversals, but also the highest std (6.21) reflecting the difficulty of consistent stair climbing. Full results in `results/evaluation_*.json`.
+Evaluation uses only the base Isaac Lab reward (no contact-aware wrapper), so all four rows are on the same scale. The **flat policy** achieves strong performance (22.07 mean, 942-step episodes), confirming the training converged well. The slopes/stairs/contact-aware policies were each trained on specific terrain configurations but are evaluated on the full mixed rough terrain (`Isaac-Velocity-Rough-Anymal-C-v0`), which includes terrain features beyond their training distribution — hence shorter episodes and lower rewards. The stairs policy shows the most variance (std=4.17) reflecting the difficulty of generalized stair climbing.
+
+**Note (checkpoint loading bug fix):** Previous evaluation reported 5–7 mean reward across all terrains. These values were from a **random policy** due to a `state_dict` key mismatch bug: the evaluation MLP used `self.net` (keys `net.0.weight`, ...) while rsl_rl saves `self.mlp` (keys `mlp.0.weight`, ...). With `strict=False`, no keys matched and random weights were silently kept. Fixed by using `OnPolicyRunner.load()` which correctly loads the trained weights. Full results in `results/evaluation_*.json`.
 
 ---
 
@@ -243,14 +261,21 @@ isaac-lab-locomotion/
 │   ├── evaluate_policy.py         # 100-episode evaluation → JSON
 │   ├── record_trajectory.py       # 500-step state recording → .npz
 │   ├── visualize_trajectory.py    # 2×2 trajectory comparison figure
-│   └── generate_ablation_figure.py # Publication-quality ablation bar chart
+│   ├── generate_ablation_figure.py # Publication-quality ablation bar chart
+│   ├── runner_utils.py             # Shared: OnPolicyRunner checkpoint loading, env creation
+│   ├── animate_robot.py           # 3D stick-figure MP4 animation from .npz
+│   ├── make_comparison_video.py   # 2×2 grid comparison video
+│   └── make_trajectory_figure.py  # Dark-theme hero figure (XY paths colored by time)
 ├── results/
 │   ├── EVALUATION_NOTES.md        # Full critique, reward scale analysis, MAD-TD notes
 │   ├── ablation_results.csv       # 5-condition ablation scores
 │   ├── ablation_figure.png        # Publication-quality bar chart
 │   ├── trajectory_comparison.png  # 4-panel trajectory visualization
+│   ├── trajectory_hero.png        # Dark-theme XY path hero figure
 │   ├── trajectory_{terrain}.png   # Per-terrain individual plots
-│   └── evaluation_{terrain}.json  # 100-episode eval results (4 files)
+│   ├── evaluation_{terrain}.json  # 100-episode eval results (4 files)
+│   ├── trajectories/              # .npz trajectory recordings (500 steps each)
+│   └── videos/                    # MP4 demo animations (4 terrains + comparison)
 ├── .github/workflows/lint.yml     # CI: black + flake8
 ├── .gitignore
 └── README.md
