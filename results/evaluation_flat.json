@@ -2,9 +2,9 @@
   "terrain": "flat",
   "checkpoint": "/workspace/checkpoints/flat/best_model.pt",
   "num_episodes": 100,
-  "mean_reward": 5.215174918100238,
-  "std_reward": 4.655820115898359,
-  "max_reward": 18.69622039794922,
-  "min_reward": -1.348388433456421,
-  "episode_length_mean": 1000.0
+  "mean_reward": 22.072116605043412,
+  "std_reward": 5.3010134296025075,
+  "max_reward": 26.371437072753906,
+  "min_reward": -1.5169837474822998,
+  "episode_length_mean": 942.42
 }

@@ -40,6 +40,26 @@
 
 **Impact:** These were inactive in v1 (Bug 2), so v1 ablation was not affected. Only visible after Bug 2 was fixed.
 
+### Bug 4 — Checkpoint Loading Key Mismatch in Evaluation Scripts (FIXED)
+
+**Files:** `scripts/evaluate_policy.py`, `scripts/record_trajectory.py`
+
+**Root cause:** The evaluation scripts constructed a standalone MLP with `self.net = nn.Sequential(...)` which produces state_dict keys like `net.0.weight`, `net.0.bias`, etc. However, rsl_rl v5's `MLPModel` uses `self.mlp = MLP(...)` which saves keys like `mlp.0.weight`, `mlp.0.bias`, `distribution.std_param`, etc. When loading with `strict=False`, **zero keys matched** — the MLP silently kept its random initialization.
+
+**Proof:** With the random policy, mean action magnitude was ~0.001, XY displacement was 1–7 cm over 500 steps, and all four feet remained in continuous contact. With the correctly loaded policy, mean |action| = 0.65–1.38, XY displacement = 0.2–2.9 m, and clear gait patterns are visible.
+
+**Fix:** Replaced standalone MLP + `load_state_dict` with `OnPolicyRunner.load()` + `get_inference_policy()`, which uses rsl_rl's own loading code. Added a shared utility module (`scripts/runner_utils.py`) with sanity checks that assert non-trivial action magnitude after loading.
+
+**Impact on evaluation:**
+| Terrain | Old (random) | Corrected | Old Ep. Length | Corrected Ep. Length |
+|---|---|---|---|---|
+| Flat | 5.22 | **22.07** | 1000.0 | 942.4 |
+| Slopes | 6.99 | 0.62 | 987.8 | 86.4 |
+| Stairs | 7.10 | 4.10 | 981.8 | 313.1 |
+| Contact-Aware | 6.30 | −0.22 | 981.4 | 42.5 |
+
+The old evaluation showed uniform ~5–7 reward across all terrains because the random policy simply stood still for ~1000 steps collecting baseline standing reward. The corrected evaluation shows: the flat policy performs strongly (22.07), while the rough-terrain policies (slopes, stairs, contact_aware) struggle because they are evaluated on the full mixed rough terrain env, not their specific training terrain configuration.
+
 ---
 
 ## Pre-Fix Results (Buggy v1 — for reference)

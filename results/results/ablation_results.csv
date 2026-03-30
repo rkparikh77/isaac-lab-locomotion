@@ -1,6 +1,0 @@
-condition,mean_reward_last50,std_reward_last50,num_data_points
-all_terms,-105.4303,153.2504,30
-no_contact_timing,-61.4979,130.1097,30
-no_terrain_clearance,-107.5177,152.6587,30
-no_energy_penalty,253.8311,130.3470,30
-no_foot_slip,-28.1042,104.1878,30
