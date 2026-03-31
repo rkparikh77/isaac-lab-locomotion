@@ -42,13 +42,20 @@
 
 ### Bug 4 — Checkpoint Loading Key Mismatch in Evaluation Scripts (FIXED)
 
-**Files:** `scripts/evaluate_policy.py`, `scripts/record_trajectory.py`
+**Files:** `scripts/evaluate_policy.py`, `scripts/record_trajectory.py`, `scripts/record_policy_video.py`
 
-**Root cause:** The evaluation scripts constructed a standalone MLP with `self.net = nn.Sequential(...)` which produces state_dict keys like `net.0.weight`, `net.0.bias`, etc. However, rsl_rl v5's `MLPModel` uses `self.mlp = MLP(...)` which saves keys like `mlp.0.weight`, `mlp.0.bias`, `distribution.std_param`, etc. When loading with `strict=False`, **zero keys matched** — the MLP silently kept its random initialization.
+**Root cause:** All three evaluation scripts constructed a standalone MLP with `self.net = nn.Sequential(...)` which produces state_dict keys like `net.0.weight`, `net.0.bias`, etc. However, rsl_rl v5's `MLPModel` uses `self.mlp = MLP(...)` which saves keys like `mlp.0.weight`, `mlp.0.bias`, `distribution.std_param`, etc. When loading with `strict=False`, **zero keys matched** — the MLP silently kept its random initialization. The scripts also contained duplicate inline `TensorDictVecEnvWrapper` and `TERRAIN_ENV_MAP` definitions instead of importing from a shared module.
 
 **Proof:** With the random policy, mean action magnitude was ~0.001, XY displacement was 1–7 cm over 500 steps, and all four feet remained in continuous contact. With the correctly loaded policy, mean |action| = 0.65–1.38, XY displacement = 0.2–2.9 m, and clear gait patterns are visible.
 
-**Fix:** Replaced standalone MLP + `load_state_dict` with `OnPolicyRunner.load()` + `get_inference_policy()`, which uses rsl_rl's own loading code. Added a shared utility module (`scripts/runner_utils.py`) with sanity checks that assert non-trivial action magnitude after loading.
+**Fix (complete):** All three scripts fully rewritten to import from `scripts/runner_utils.py`:
+- `load_actor()` function and inline `class MLP` deleted entirely from all three scripts
+- `TensorDictVecEnvWrapper` and `TERRAIN_ENV_MAP` duplicates removed
+- Replaced with `from scripts.runner_utils import create_env, load_policy`
+- `runner_utils.py` uses `OnPolicyRunner.load()` + `get_inference_policy()` — rsl_rl's own loading code
+- `evaluate_policy.py` gains `--eval_terrain` flag for cross-terrain evaluation
+- `record_trajectory.py` gains physical assertion: flat policy must move >0.5m
+- `strict=False` is never used anywhere in the evaluation pipeline
 
 **Impact on evaluation:**
 | Terrain | Old (random) | Corrected | Old Ep. Length | Corrected Ep. Length |

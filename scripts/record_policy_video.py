@@ -22,7 +22,6 @@ Usage
 from __future__ import annotations
 
 import argparse
-import os
 import pathlib
 import sys
 
@@ -54,90 +53,19 @@ args_cli = parser.parse_args()
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-import gymnasium as gym
 import numpy as np
 import torch
 
-import isaaclab_tasks  # noqa: F401
-from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
-from isaaclab_tasks.utils import load_cfg_from_registry
-from rsl_rl.env import VecEnv
-from tensordict import TensorDict
-
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-TERRAIN_ENV_MAP = {
-    "flat": "Isaac-Velocity-Flat-Anymal-C-v0",
-    "slopes": "Isaac-Velocity-Rough-Anymal-C-v0",
-    "stairs": "Isaac-Velocity-Rough-Anymal-C-v0",
-    "contact_aware": "Isaac-Velocity-Rough-Anymal-C-v0",
-}
+from scripts.runner_utils import create_env, load_policy  # noqa: E402
 
 CHECKPOINT_REWARD_MAP = {
-    "flat": 14.527,
-    "slopes": 17.677,
-    "stairs": 9.871,
-    "contact_aware": "TBD",  # filled after training
+    "flat": 22.07,
+    "slopes": 0.62,
+    "stairs": 4.10,
+    "contact_aware": -0.22,
 }
-
-
-class TensorDictVecEnvWrapper(VecEnv):
-    def __init__(self, env):
-        self._env = env
-        self.num_envs = env.num_envs
-        self.num_actions = env.num_actions
-        self.max_episode_length = env.max_episode_length
-        self.episode_length_buf = env.episode_length_buf
-        self.device = env.device
-        self.cfg = getattr(env, "cfg", {})
-        self.extras = {}
-
-    def _to_td(self, obs):
-        return TensorDict({"policy": obs}, batch_size=[self.num_envs], device=self.device)
-
-    def get_observations(self):
-        obs, _ = self._env.get_observations()
-        self.episode_length_buf = self._env.episode_length_buf
-        return self._to_td(obs)
-
-    def step(self, actions):
-        obs, rewards, dones, extras = self._env.step(actions)
-        self.episode_length_buf = self._env.episode_length_buf
-        self.extras = extras
-        return self._to_td(obs), rewards, dones, extras
-
-    def reset(self):
-        obs, extras = self._env.reset()
-        return self._to_td(obs), extras
-
-    def close(self):
-        self._env.close()
-
-
-def load_actor(checkpoint_path, obs_size, action_size, device):
-    import torch.nn as nn
-
-    class MLP(nn.Module):
-        def __init__(self, in_dim, out_dim, hidden=(512, 256, 128)):
-            super().__init__()
-            layers = []
-            prev = in_dim
-            for h in hidden:
-                layers += [nn.Linear(prev, h), nn.ELU()]
-                prev = h
-            layers.append(nn.Linear(prev, out_dim))
-            self.net = nn.Sequential(*layers)
-
-        def forward(self, x):
-            return self.net(x)
-
-    actor = MLP(obs_size, action_size).to(device)
-    if os.path.exists(checkpoint_path):
-        saved = torch.load(checkpoint_path, weights_only=False, map_location=device)
-        if "actor_state_dict" in saved:
-            actor.load_state_dict(saved["actor_state_dict"], strict=False)
-    actor.eval()
-    return actor
 
 
 def record_trajectory(
@@ -151,15 +79,8 @@ def record_trajectory(
     SIM_DT = 0.02  # 50 Hz
     num_steps = int(duration / SIM_DT)
 
-    env_id = TERRAIN_ENV_MAP[terrain]
-    env_cfg = load_cfg_from_registry(env_id, "env_cfg_entry_point")
-    env_cfg.scene.num_envs = num_envs
-
-    gym_env = gym.make(env_id, cfg=env_cfg, render_mode=None)
-    rsl_env = RslRlVecEnvWrapper(gym_env)
-    env = TensorDictVecEnvWrapper(rsl_env)
-
-    actor = load_actor(checkpoint, rsl_env.num_obs, env.num_actions, device)
+    env = create_env(terrain, num_envs)
+    policy = load_policy(checkpoint, env, device=device)
 
     # Trajectory buffers
     base_pos = []
@@ -172,20 +93,23 @@ def record_trajectory(
 
     with torch.no_grad():
         for step in range(num_steps):
-            obs = obs_td["policy"]
-            actions = actor(obs)
+            actions = policy(obs_td)
             obs_td, rewards, dones, _ = env.step(actions)
 
-            isaac_env = env._env.unwrapped
-            robot = isaac_env.scene["robot"]
-            rd = robot.data
+            try:
+                isaac_env = env._env.unwrapped
+                robot = isaac_env.scene["robot"]
+                rd = robot.data
 
-            if hasattr(rd, "root_pos_w"):
-                base_pos.append(rd.root_pos_w[0, :3].cpu().numpy())
-            if hasattr(rd, "root_quat_w"):
-                base_quat.append(rd.root_quat_w[0].cpu().numpy())
-            if hasattr(rd, "joint_pos"):
-                joint_pos.append(rd.joint_pos[0].cpu().numpy())
+                if hasattr(rd, "root_pos_w"):
+                    base_pos.append(rd.root_pos_w[0, :3].cpu().numpy())
+                if hasattr(rd, "root_quat_w"):
+                    base_quat.append(rd.root_quat_w[0].cpu().numpy())
+                if hasattr(rd, "joint_pos"):
+                    joint_pos.append(rd.joint_pos[0].cpu().numpy())
+            except Exception:
+                pass
+
             rewards_buf.append(float(rewards[0].item()))
             timestamps.append(step * SIM_DT)
 
@@ -216,7 +140,7 @@ def render_animation(trajectory: dict, out_path: str, terrain: str) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-    from matplotlib.animation import FFMpegWriter
+    from matplotlib.animation import FFMpegWriter, FuncAnimation
 
     pos = trajectory.get("base_pos")
     if pos is None or len(pos) == 0:
@@ -240,7 +164,7 @@ def render_animation(trajectory: dict, out_path: str, terrain: str) -> None:
     reward = CHECKPOINT_REWARD_MAP.get(terrain, "?")
     ax.set_title(
         f"AnymalC — {terrain.replace('_', ' ').title()} Terrain\n"
-        f"Best reward: {reward}  |  dt={trajectory['dt']*1000:.0f}ms",
+        f"Eval reward: {reward}  |  dt={trajectory['dt']*1000:.0f}ms",
         fontsize=11,
         fontweight="bold",
     )
@@ -263,13 +187,12 @@ def render_animation(trajectory: dict, out_path: str, terrain: str) -> None:
             point.set_3d_properties([pos[i, 2]])
         t = trajectory["timestamps"][i] if i < len(trajectory["timestamps"]) else 0.0
         ax.set_title(
-            f"AnymalC — {terrain.replace('_', ' ').title()} Terrain\n" f"Best reward: {reward}  |  t={t:.1f}s",
+            f"AnymalC — {terrain.replace('_', ' ').title()} Terrain\n"
+            f"Eval reward: {reward}  |  t={t:.1f}s",
             fontsize=11,
             fontweight="bold",
         )
         return line, point
-
-    from matplotlib.animation import FuncAnimation
 
     anim = FuncAnimation(fig, update, frames=list(frames), interval=1000 // fps, blit=False)
 

@@ -47,99 +47,17 @@ args_cli = parser.parse_args()
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
-import gymnasium as gym
 import numpy as np
 import torch
 
-import isaaclab_tasks  # noqa: F401
-from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
-from isaaclab_tasks.utils import load_cfg_from_registry
-from rsl_rl.env import VecEnv
-from tensordict import TensorDict
-
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-TERRAIN_ENV_MAP = {
-    "flat": "Isaac-Velocity-Flat-Anymal-C-v0",
-    "slopes": "Isaac-Velocity-Rough-Anymal-C-v0",
-    "stairs": "Isaac-Velocity-Rough-Anymal-C-v0",
-    "contact_aware": "Isaac-Velocity-Rough-Anymal-C-v0",
-}
-
-
-class TensorDictVecEnvWrapper(VecEnv):
-    def __init__(self, env):
-        self._env = env
-        self.num_envs = env.num_envs
-        self.num_actions = env.num_actions
-        self.max_episode_length = env.max_episode_length
-        self.episode_length_buf = env.episode_length_buf
-        self.device = env.device
-        self.cfg = getattr(env, "cfg", {})
-        self.extras = {}
-
-    def _to_td(self, obs):
-        return TensorDict({"policy": obs}, batch_size=[self.num_envs], device=self.device)
-
-    def get_observations(self):
-        obs, _ = self._env.get_observations()
-        self.episode_length_buf = self._env.episode_length_buf
-        return self._to_td(obs)
-
-    def step(self, actions):
-        obs, rewards, dones, extras = self._env.step(actions)
-        self.episode_length_buf = self._env.episode_length_buf
-        self.extras = extras
-        return self._to_td(obs), rewards, dones, extras
-
-    def reset(self):
-        obs, extras = self._env.reset()
-        return self._to_td(obs), extras
-
-    def close(self):
-        self._env.close()
-
-
-def load_actor(checkpoint_path: str, obs_size: int, action_size: int, device: str):
-    import os
-    import torch.nn as nn
-
-    class MLP(nn.Module):
-        def __init__(self, in_dim, out_dim, hidden=(512, 256, 128)):
-            super().__init__()
-            layers = []
-            prev = in_dim
-            for h in hidden:
-                layers += [nn.Linear(prev, h), nn.ELU()]
-                prev = h
-            layers.append(nn.Linear(prev, out_dim))
-            self.net = nn.Sequential(*layers)
-
-        def forward(self, x):
-            return self.net(x)
-
-    actor = MLP(obs_size, action_size).to(device)
-    if os.path.exists(checkpoint_path):
-        saved = torch.load(checkpoint_path, weights_only=False, map_location=device)
-        if "actor_state_dict" in saved:
-            actor.load_state_dict(saved["actor_state_dict"], strict=False)
-            print(f"Loaded actor from {checkpoint_path}", flush=True)
-    actor.eval()
-    return actor
+from scripts.runner_utils import create_env, load_policy  # noqa: E402
 
 
 def record(checkpoint: str, terrain: str, num_steps: int, num_envs: int = 1, device: str = "cuda"):
-    env_id = TERRAIN_ENV_MAP[terrain]
-    env_cfg = load_cfg_from_registry(env_id, "env_cfg_entry_point")
-    env_cfg.scene.num_envs = num_envs
-    if hasattr(env_cfg, "curriculum"):
-        env_cfg.curriculum = None
-
-    gym_env = gym.make(env_id, cfg=env_cfg, render_mode=None)
-    rsl_env = RslRlVecEnvWrapper(gym_env)
-    env = TensorDictVecEnvWrapper(rsl_env)
-
-    actor = load_actor(checkpoint, rsl_env.num_obs, env.num_actions, device)
+    env = create_env(terrain, num_envs)
+    policy = load_policy(checkpoint, env, device=device)
 
     base_positions = []
     base_orientations = []
@@ -152,8 +70,7 @@ def record(checkpoint: str, terrain: str, num_steps: int, num_envs: int = 1, dev
 
     with torch.no_grad():
         for _ in range(num_steps):
-            obs = obs_td["policy"]
-            actions = actor(obs)
+            actions = policy(obs_td)
             obs_td, _, _, _ = env.step(actions)
 
             try:
@@ -166,17 +83,28 @@ def record(checkpoint: str, terrain: str, num_steps: int, num_envs: int = 1, dev
                 base_linear_velocities.append(rd.root_lin_vel_w[0].cpu().numpy())
                 base_angular_velocities.append(rd.root_ang_vel_w[0].cpu().numpy())
 
-                # Contact forces — try multiple sensor keys
+                # Contact forces — try multiple sensor locations
                 cf_found = False
                 for sensor_key in ["contact_forces", "feet_contact", "foot_contact"]:
                     try:
-                        sensor = isaac_env.scene[sensor_key]
+                        sensor = isaac_env.scene.sensors[sensor_key]
                         cf = sensor.data.net_forces_w[0].cpu().numpy()  # [4, 3]
                         foot_contact_forces.append(cf)
                         cf_found = True
                         break
                     except (KeyError, AttributeError):
-                        continue
+                        pass
+                if not cf_found:
+                    # Fallback: try scene dict directly
+                    for sensor_key in ["contact_forces", "feet_contact", "foot_contact"]:
+                        try:
+                            sensor = isaac_env.scene[sensor_key]
+                            cf = sensor.data.net_forces_w[0].cpu().numpy()
+                            foot_contact_forces.append(cf)
+                            cf_found = True
+                            break
+                        except (KeyError, AttributeError):
+                            pass
                 if not cf_found:
                     foot_contact_forces.append(np.zeros((4, 3), dtype=np.float32))
 
@@ -191,17 +119,28 @@ def record(checkpoint: str, terrain: str, num_steps: int, num_envs: int = 1, dev
 
     env.close()
 
+    # Physical verification
+    pos = np.array(base_positions)
+    vel = np.array(base_linear_velocities)
+
+    if len(pos) > 50:
+        xy_disp = np.sqrt((pos[-1, 0] - pos[0, 0]) ** 2 + (pos[-1, 1] - pos[0, 1]) ** 2)
+        mean_speed = np.linalg.norm(vel[50:], axis=-1).mean()
+        print(f"PHYSICAL CHECK: XY={xy_disp:.3f}m  speed={mean_speed:.3f}m/s", flush=True)
+        if terrain == "flat":
+            assert xy_disp > 0.5, f"FLAT POLICY NOT WALKING: only {xy_disp:.3f}m displacement"
+
     out_dir = pathlib.Path(__file__).resolve().parents[1] / "results" / "trajectories"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"trajectory_{terrain}.npz"
 
     np.savez(
         out_path,
-        base_position=np.array(base_positions),
+        base_position=pos,
         base_orientation=np.array(base_orientations),
         joint_positions=np.array(joint_positions),
         foot_contact_forces=np.array(foot_contact_forces),
-        base_linear_velocity=np.array(base_linear_velocities),
+        base_linear_velocity=vel,
         base_angular_velocity=np.array(base_angular_velocities),
     )
     print(f"Saved trajectory → {out_path}", flush=True)

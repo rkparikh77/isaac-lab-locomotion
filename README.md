@@ -110,7 +110,11 @@ Leave-one-out: each condition trains for 300 iterations with one term disabled (
 
 ## Evaluation
 
-100 evaluation episodes per terrain, greedy policy (deterministic action, no noise), 256 parallel envs, no curriculum. Checkpoint loaded via `OnPolicyRunner.load()` + `get_inference_policy()`.
+100 evaluation episodes per terrain, greedy policy (deterministic action, no noise), 256 parallel envs, no curriculum. Checkpoint loaded via `scripts/runner_utils.py` → `load_policy()` which uses `OnPolicyRunner.load()` + `get_inference_policy()`. NEVER uses `strict=False`.
+
+### Native Terrain Results
+
+Each policy evaluated on the terrain type it was trained on:
 
 | Terrain | Mean Reward | ± Std | Max | Min | Mean Ep. Length |
 |---------|-------------|-------|-----|-----|----------------|
@@ -121,7 +125,27 @@ Leave-one-out: each condition trains for 300 iterations with one term disabled (
 
 Evaluation uses only the base Isaac Lab reward (no contact-aware wrapper), so all four rows are on the same scale. The **flat policy** achieves strong performance (22.07 mean, 942-step episodes), confirming the training converged well. The slopes/stairs/contact-aware policies were each trained on specific terrain configurations but are evaluated on the full mixed rough terrain (`Isaac-Velocity-Rough-Anymal-C-v0`), which includes terrain features beyond their training distribution — hence shorter episodes and lower rewards. The stairs policy shows the most variance (std=4.17) reflecting the difficulty of generalized stair climbing.
 
-**Note (checkpoint loading bug fix):** Previous evaluation reported 5–7 mean reward across all terrains. These values were from a **random policy** due to a `state_dict` key mismatch bug: the evaluation MLP used `self.net` (keys `net.0.weight`, ...) while rsl_rl saves `self.mlp` (keys `mlp.0.weight`, ...). With `strict=False`, no keys matched and random weights were silently kept. Fixed by using `OnPolicyRunner.load()` which correctly loads the trained weights. Full results in `results/evaluation_*.json`.
+### Cross-Terrain Transfer (all policies on flat terrain)
+
+| Policy | Flat Reward | Ep. Length | Notes |
+|--------|-------------|------------|-------|
+| Flat (native) | 22.07 | 942.4 | Native terrain — best performance |
+| Slopes | — | — | Run: `--eval_terrain flat` |
+| Stairs | — | — | Run: `--eval_terrain flat` |
+| Contact-Aware | — | — | Run: `--eval_terrain flat` |
+
+Cross-terrain transfer evaluation uses the `--eval_terrain` flag added to `evaluate_policy.py`. Run with active checkpoints to populate this table.
+
+### Physical Verification (flat policy, 500-step trajectory)
+
+| Metric | Value | Pass? |
+|--------|-------|-------|
+| XY displacement | 2.89 m | ✓ (>0.5 m) |
+| Mean speed (steps 50+) | 0.29 m/s | ✓ (>0.05 m/s) |
+| Gait (any foot in swing) | 100% of steps | ✓ (>10%) |
+| Joint velocity | 0.016 rad/step | ✓ (sustained) |
+
+**Checkpoint loading fix:** Previous evaluation reported 5–7 mean reward across all terrains. These values were from a **random policy** due to a `state_dict` key mismatch bug: the evaluation MLP used `self.net` (keys `net.0.weight`, ...) while rsl_rl v5 saves `self.mlp` (keys `mlp.0.weight`, ...). With `strict=False`, no keys matched and random weights were silently kept. Fixed in `scripts/runner_utils.py` using `OnPolicyRunner.load()`. All eval/trajectory/video scripts now import from `runner_utils`. Full results in `results/evaluation_*.json`.
 
 ---
 
