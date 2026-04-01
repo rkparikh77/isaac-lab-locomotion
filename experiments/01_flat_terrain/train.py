@@ -62,9 +62,9 @@ from config import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TensorDictVecEnvWrapper(VecEnv):
-    """Adapts Isaac Lab's RslRlVecEnvWrapper (returns flat tensors) to the
-    rsl_rl v5 VecEnv interface which requires TensorDicts."""
+class ExtrasTrackingWrapper(VecEnv):
+    """Thin wrapper around RslRlVecEnvWrapper that stores the latest extras
+    dict for metric extraction between training iterations."""
 
     def __init__(self, env: RslRlVecEnvWrapper) -> None:
         self._env = env
@@ -76,23 +76,20 @@ class TensorDictVecEnvWrapper(VecEnv):
         self.cfg = getattr(env, "cfg", {})
         self.extras = {}
 
-    def _to_td(self, obs: torch.Tensor) -> TensorDict:
-        return TensorDict({"policy": obs}, batch_size=[self.num_envs], device=self.device)
-
     def get_observations(self) -> TensorDict:
-        obs, _ = self._env.get_observations()
+        obs_td = self._env.get_observations()
         self.episode_length_buf = self._env.episode_length_buf
-        return self._to_td(obs)
+        return obs_td
 
     def step(self, actions: torch.Tensor):
-        obs, rewards, dones, extras = self._env.step(actions)
+        obs_td, rewards, dones, extras = self._env.step(actions)
         self.episode_length_buf = self._env.episode_length_buf
         self.extras = extras
-        return self._to_td(obs), rewards, dones, extras
+        return obs_td, rewards, dones, extras
 
     def reset(self):
-        obs, extras = self._env.reset()
-        return self._to_td(obs), extras
+        obs_td = self._env.get_observations()
+        return obs_td, {}
 
     def close(self):
         self._env.close()
@@ -149,15 +146,15 @@ def build_runner_cfg(cfg: TrainingConfig) -> dict:
     }
 
 
-def make_env(cfg: TrainingConfig) -> TensorDictVecEnvWrapper:
+def make_env(cfg: TrainingConfig) -> ExtrasTrackingWrapper:
     """Create and wrap the Isaac Lab vectorised environment."""
     env_cfg = load_cfg_from_registry(cfg.env_id, "env_cfg_entry_point")
     env_cfg.scene.num_envs = cfg.num_envs
     env = gym.make(cfg.env_id, cfg=env_cfg, render_mode=None)
-    return TensorDictVecEnvWrapper(RslRlVecEnvWrapper(env))
+    return ExtrasTrackingWrapper(RslRlVecEnvWrapper(env))
 
 
-def apply_reward_weights(env: TensorDictVecEnvWrapper, rw: RewardWeights) -> None:
+def apply_reward_weights(env: ExtrasTrackingWrapper, rw: RewardWeights) -> None:
     """Patch the environment's reward manager with our config weights."""
     reward_manager = env._env.unwrapped.reward_manager
     weight_map = {

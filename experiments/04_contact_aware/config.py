@@ -38,7 +38,7 @@ class ContactRewardWeights:
     foot_slip_penalty: float = -0.5
     terrain_clearance: float = 0.3
     contact_timing: float = -0.2
-    energy_penalty: float = -1.0e-4
+    energy_penalty: float = -1.0e-6
 
 
 @dataclass
@@ -91,7 +91,7 @@ class TrainingConfig:
     load_checkpoint: str = "/workspace/checkpoints/stairs/best_model.pt"
 
     # --- Training schedule ---
-    max_iterations: int = 300
+    max_iterations: int = 500
     log_interval: int = 10
     checkpoint_interval: int = 100
     checkpoint_dir: str = "/workspace/checkpoints/contact_aware"

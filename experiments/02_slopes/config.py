@@ -85,7 +85,7 @@ class TrainingConfig:
     best_model_path: str = "/workspace/checkpoints/slopes/best_model.pt"
 
     # --- Early stopping ---
-    early_stop_reward_threshold: float = 7.0
+    early_stop_reward_threshold: float = 20.0
     early_stop_patience: int = 50
 
     # --- wandb ---

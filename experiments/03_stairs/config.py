@@ -82,14 +82,14 @@ class TrainingConfig:
     load_checkpoint: str = "/workspace/checkpoints/slopes/best_model.pt"
 
     # --- Training schedule ---
-    max_iterations: int = 1000
+    max_iterations: int = 1500
     log_interval: int = 10
     checkpoint_interval: int = 100
     checkpoint_dir: str = "/workspace/checkpoints/stairs"
     best_model_path: str = "/workspace/checkpoints/stairs/best_model.pt"
 
     # --- Early stopping ---
-    early_stop_reward_threshold: float = 6.5
+    early_stop_reward_threshold: float = 15.0
     early_stop_patience: int = 50
 
     # --- wandb ---

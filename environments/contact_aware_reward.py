@@ -246,7 +246,7 @@ _TERM_REGISTRY: dict[str, tuple[Callable, float]] = {
     "foot_slip_penalty": (foot_slip_penalty, -0.5),
     "terrain_clearance": (terrain_clearance_reward, 0.3),
     "contact_timing": (contact_timing_penalty, -0.2),
-    "energy_penalty": (energy_penalty, -1e-4),
+    "energy_penalty": (energy_penalty, -1e-6),
 }
 
 

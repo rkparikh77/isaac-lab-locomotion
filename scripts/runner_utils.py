@@ -26,9 +26,8 @@ TERRAIN_ENV_MAP = {
 }
 
 
-class TensorDictVecEnvWrapper(VecEnv):
-    """Adapts Isaac Lab's RslRlVecEnvWrapper (flat tensors) to rsl_rl v5
-    VecEnv interface which requires TensorDicts."""
+class ExtrasTrackingWrapper(VecEnv):
+    """Thin wrapper around RslRlVecEnvWrapper that stores the latest extras."""
 
     def __init__(self, env: RslRlVecEnvWrapper) -> None:
         self._env = env
@@ -40,23 +39,20 @@ class TensorDictVecEnvWrapper(VecEnv):
         self.cfg = getattr(env, "cfg", {})
         self.extras = {}
 
-    def _to_td(self, obs: torch.Tensor) -> TensorDict:
-        return TensorDict({"policy": obs}, batch_size=[self.num_envs], device=self.device)
-
     def get_observations(self) -> TensorDict:
-        obs, _ = self._env.get_observations()
+        obs_td = self._env.get_observations()
         self.episode_length_buf = self._env.episode_length_buf
-        return self._to_td(obs)
+        return obs_td
 
     def step(self, actions: torch.Tensor):
-        obs, rewards, dones, extras = self._env.step(actions)
+        obs_td, rewards, dones, extras = self._env.step(actions)
         self.episode_length_buf = self._env.episode_length_buf
         self.extras = extras
-        return self._to_td(obs), rewards, dones, extras
+        return obs_td, rewards, dones, extras
 
     def reset(self):
-        obs, extras = self._env.reset()
-        return self._to_td(obs), extras
+        obs_td = self._env.get_observations()
+        return obs_td, {}
 
     def close(self):
         self._env.close()
@@ -105,7 +101,7 @@ def build_eval_runner_cfg() -> dict:
     }
 
 
-def create_env(terrain: str, num_envs: int) -> TensorDictVecEnvWrapper:
+def create_env(terrain: str, num_envs: int) -> ExtrasTrackingWrapper:
     """Create and wrap the Isaac Lab vectorised environment."""
     env_id = TERRAIN_ENV_MAP[terrain]
     env_cfg = load_cfg_from_registry(env_id, "env_cfg_entry_point")
@@ -114,10 +110,10 @@ def create_env(terrain: str, num_envs: int) -> TensorDictVecEnvWrapper:
         env_cfg.curriculum = None
     gym_env = gym.make(env_id, cfg=env_cfg, render_mode=None)
     rsl_env = RslRlVecEnvWrapper(gym_env)
-    return TensorDictVecEnvWrapper(rsl_env)
+    return ExtrasTrackingWrapper(rsl_env)
 
 
-def load_policy(checkpoint_path: str, env: TensorDictVecEnvWrapper, device: str = "cuda"):
+def load_policy(checkpoint_path: str, env: ExtrasTrackingWrapper, device: str = "cuda"):
     """
     Load a trained policy from a checkpoint using OnPolicyRunner.
 

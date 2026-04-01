@@ -82,7 +82,7 @@ class TrainingConfig:
 
     # --- Early stopping ---
     # Mean episode reward threshold that triggers early stopping
-    early_stop_reward_threshold: float = 8.0
+    early_stop_reward_threshold: float = 25.0
     # Number of *consecutive* iterations above threshold before stopping
     early_stop_patience: int = 50
 

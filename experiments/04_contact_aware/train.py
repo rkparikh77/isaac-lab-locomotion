@@ -82,7 +82,9 @@ from config import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TensorDictVecEnvWrapper(VecEnv):
+class ExtrasTrackingWrapper(VecEnv):
+    """Thin wrapper around RslRlVecEnvWrapper that stores the latest extras."""
+
     def __init__(self, env: RslRlVecEnvWrapper) -> None:
         self._env = env
         self.num_envs = env.num_envs
@@ -93,23 +95,20 @@ class TensorDictVecEnvWrapper(VecEnv):
         self.cfg = getattr(env, "cfg", {})
         self.extras = {}
 
-    def _to_td(self, obs: torch.Tensor) -> TensorDict:
-        return TensorDict({"policy": obs}, batch_size=[self.num_envs], device=self.device)
-
     def get_observations(self) -> TensorDict:
-        obs, _ = self._env.get_observations()
+        obs_td = self._env.get_observations()
         self.episode_length_buf = self._env.episode_length_buf
-        return self._to_td(obs)
+        return obs_td
 
     def step(self, actions: torch.Tensor):
-        obs, rewards, dones, extras = self._env.step(actions)
+        obs_td, rewards, dones, extras = self._env.step(actions)
         self.episode_length_buf = self._env.episode_length_buf
         self.extras = extras
-        return self._to_td(obs), rewards, dones, extras
+        return obs_td, rewards, dones, extras
 
     def reset(self):
-        obs, extras = self._env.reset()
-        return self._to_td(obs), extras
+        obs_td = self._env.get_observations()
+        return obs_td, {}
 
     def close(self):
         self._env.close()
@@ -187,9 +186,9 @@ def _extract_contact_data(isaac_env) -> dict:
     return data
 
 
-class ContactAwareVecEnvWrapper(TensorDictVecEnvWrapper):
+class ContactAwareVecEnvWrapper(ExtrasTrackingWrapper):
     """
-    Extends TensorDictVecEnvWrapper to inject contact-aware reward terms.
+    Extends ExtrasTrackingWrapper to inject contact-aware reward terms.
 
     At each step the RewardManager computes additional reward from contact
     force / foot kinematics data extracted from the Isaac Lab scene.  The

@@ -8,7 +8,7 @@
 
 ## Key Results
 
-Four-phase terrain curriculum training of an AnymalC quadruped using PPO (Isaac Lab + RSL-RL v5), followed by a five-condition leave-one-out ablation of contact-aware reward terms on stair terrain. After fixing three sign bugs in the reward implementation (see [Bug Fix Log](results/EVALUATION_NOTES.md#bug-fix-log)), the corrected ablation shows: `energy_penalty` is the strongest constraint (removing it raises reward by +341%), and `foot_slip_penalty` and `contact_timing_penalty` are confirmed meaningful with +72% and +41% effects respectively — making these the primary targets for MAD-TD model-based RL integration.
+Four-phase terrain curriculum training of an AnymalC quadruped using PPO (Isaac Lab + RSL-RL v5), trained to convergence (1500 iters flat, 1000 slopes, 1500 stairs, 500 contact-aware). All four policies physically verified walking via trajectory analysis. Leave-one-out ablation of five contact-aware reward terms on a walking stairs policy (500 iters each) shows: `terrain_clearance` is the most impactful term (removing it drops reward by -21%), while `foot_slip_penalty` removal boosts reward by +29% (less constrained gait). Energy penalty was reduced from -1e-4 to -1e-6 after discovering it dominated the reward landscape and froze the policy.
 
 ![Ablation bar chart](results/ablation_figure.png)
 
@@ -34,42 +34,40 @@ Generated with `scripts/animate_robot.py` (matplotlib Agg + imageio/libx264). Fo
 
 ## Training Progression
 
-| Phase | Terrain | Reward | Iterations | Notes |
-|-------|---------|--------|------------|-------|
-| 1 | Flat | 14.527 | 138 | Early-stopped at threshold=8.0 |
-| 2a | Slopes (0–15°) | 17.677 | 175 | Warm-started from flat |
-| 2b | Stairs (5–20 cm) | 9.871 | 174 | Warm-started from slopes |
-| 3 | Contact-Aware (v2, bugs fixed) | 77.212 | 300 | Warm-started from stairs; all 5 terms correctly signed |
+| Phase | Terrain | Best Reward | Iterations | XY Disp. | Speed | Notes |
+|-------|---------|-------------|------------|----------|-------|-------|
+| 1 | Flat | 25.85 | 1500 | 10.57 m | 1.26 m/s | Converged, threshold=25.0 |
+| 2a | Slopes (0–15°) | 21.09 | 318 (early stop) | 1.95 m | 0.95 m/s | Warm-started from flat |
+| 2b | Stairs (5–20 cm) | 15.76 | 1006 (early stop) | 5.64 m | 0.70 m/s | Warm-started from slopes |
+| 3 | Contact-Aware | 762.9 | 500 | 6.71 m | 0.83 m/s | Energy penalty fixed: -1e-4 → -1e-6 |
 
-Rewards are rsl_rl `rewbuffer` values (undiscounted episode returns). Phase 1–2 values reflect the base Isaac Lab reward. Phase 3 (v2) includes five corrected contact-aware terms; the higher reward vs. Phase 1–2 reflects the additional velocity tracking and terrain clearance bonuses from the contact-aware wrapper.
+Rewards are rsl_rl `rewbuffer` values (undiscounted episode returns). Phase 1–2 values reflect the base Isaac Lab reward. Phase 3 includes five contact-aware terms; the higher reward vs. Phase 1–2 reflects the additional velocity tracking and terrain clearance bonuses. All four policies physically verified walking (XY displacement > 1m over 500 steps).
 
 ---
 
 ## Ablation Study
 
-**Design:** Leave-one-out over 5 contact-aware reward terms. Each condition is trained for 300 iterations from the stairs checkpoint. Single seed (N=1 per condition — treat all results as exploratory).
+**Design:** Leave-one-out over 5 contact-aware reward terms. Each condition is trained for 500 iterations from the walking stairs checkpoint (which traverses stairs at 0.70 m/s). Single seed (N=1 per condition — treat all results as exploratory). Energy penalty weight corrected from -1e-4 to -1e-6 (was dominating reward and freezing the policy).
 
 ![Ablation figure](results/ablation_figure.png)
 
-**v2 results (bugs fixed — all terms correctly signed, contact sensor active):**
+**v3 results (energy penalty fixed, trained from walking stairs policy, 500 iters):**
 
-| Condition | Mean Reward (last 50 iters) | ± Std | Best | Δ vs Baseline | Interpretation |
-|---|---|---|---|---|---|
-| All terms (baseline) | −105.4 | 153.3 | 12.5 | — | All 5 penalties active |
-| No contact timing | −61.5 | 130.1 | 41.3 | +41% | Timing constraint removed |
-| No terrain clearance | −107.5 | 152.7 | 17.9 | −2% | Negligible effect |
-| **No energy penalty** | **+253.8** | **130.3** | **398.5** | **+341%** | **Dominant term: torque penalty unlocked** |
-| No foot slip | −28.1 | 104.2 | 51.8 | +72% | Slip constraint removed |
+| Condition | Mean Reward (last 50 iters) | ± Std | Best | Δ vs Baseline | Physical | Interpretation |
+|---|---|---|---|---|---|---|
+| All terms (baseline) | 469.2 | 132.1 | 650.3 | — | walks (2.75m) | All 5 terms active |
+| No contact timing | 510.9 | 135.7 | 683.3 | +9% | walks (3.12m) | Minimal effect |
+| **No terrain clearance** | **371.7** | **111.9** | **543.5** | **−21%** | **walks (3.99m)** | **Most impactful — removing it hurts** |
+| No energy penalty | 475.6 | 146.4 | 687.8 | +1% | walks (3.81m) | Negligible at -1e-6 weight |
+| **No foot slip** | **607.5** | **166.1** | **790.7** | **+29%** | **walks (1.93m)** | **Removes gait constraint** |
 
-**Interpretation:** `energy_penalty` is the dominant constraint — its removal allows high-torque, high-speed gaits that maximize velocity tracking reward at the cost of energy efficiency. `foot_slip` and `contact_timing` are confirmed meaningful (not inactive anymore). `terrain_clearance` shows minimal effect, possibly because its +0.3 weight provides a positive signal that partially cancels other penalties. High variance across all conditions (std ~100–153) reflects training instability starting from the stairs checkpoint — 300 iterations is insufficient for the policy to converge under all five new penalty terms simultaneously.
+**Interpretation:** `terrain_clearance` is the most valuable term — its removal causes the largest reward drop (-21%), confirming that foot-lifting incentives are critical for stair traversal. `foot_slip_penalty` is the strongest constraint — removing it allows higher reward (+29%) but the resulting gait is less controlled (slower, lower z-range). `contact_timing` and `energy_penalty` have minimal individual effects at their current weights. All ablation conditions produce walking policies (verified via trajectory displacement > 1m), meaning the ablation results reflect genuine reward-behavior tradeoffs, not just balancing-vs-walking artifacts.
 
 ---
 
 ## Reward Scale Analysis
 
-**v1 (buggy):** Ablation rewards were 357–2703 vs Phase 1–2 range of 9–17. Root cause: three double-negatives in penalty functions (`energy_penalty`, `foot_slip_penalty`, `contact_timing_penalty`), plus inactive contact sensor. All fixed in v2.
-
-**v2 (fixed):** Contact-aware training reward is 77.2 (best), ablation range is −107.5 to +253.8. The negative mean rewards reflect the combined penalty load not yet overcome after 300 training iterations from the stairs checkpoint. The higher ceiling vs. Phase 1–2 (best=77 vs. best=17) comes from the additional velocity tracking and terrain clearance bonus terms in the contact-aware wrapper. Full analysis in [EVALUATION_NOTES.md](results/EVALUATION_NOTES.md#reward-scale-analysis).
+**v3 (current):** Contact-aware training reward reaches 762.9 (best) after fixing the energy penalty weight from -1e-4 to -1e-6. The previous -1e-4 weight made the energy penalty dominate the reward (raw torque² ≈ 7900, so -1e-4 × 7900 = -0.79/step, overwhelming all other terms). At -1e-6, the per-step energy contribution is -0.008, allowing the policy to actually learn locomotion while still lightly penalizing energy use. Ablation rewards range from 371.7 to 607.5 — all positive and all producing walking policies, confirming the reward function is well-balanced.
 
 ---
 
@@ -91,11 +89,11 @@ Five terms are added to the base Isaac Lab reward via `ContactAwareVecEnvWrapper
 | Foot slip penalty | −Σᵢ contact_i · ‖v_foot_i^xy‖² | −0.5 | No sliding when foot is loaded |
 | Terrain clearance | Σᵢ swing_i · max(z_i − 0.05, 0) | +0.3 | Lift feet in swing phase |
 | Contact timing | −(‖c_FL − c_RR‖ + ‖c_FR − c_RL‖) | −0.2 | Diagonal trot synchrony |
-| Energy penalty | −Σᵢ τᵢ² (BUG: net effect is +) | −1e-4 | Intended: penalize joint torques |
+| Energy penalty | −Σᵢ τᵢ² | −1e-6 | Penalize joint torques (reduced from -1e-4) |
 
 ### Ablation Methodology
 
-Leave-one-out: each condition trains for 300 iterations with one term disabled (weight=0). All five conditions start from the same stairs checkpoint. Sequential subprocess execution avoids the PhysX GPU Foundation singleton crash. Results are the mean ± std of the `rewbuffer` over the last 50 iterations.
+Leave-one-out: each condition trains for 500 iterations with one term disabled (weight=0). All five conditions start from the same walking stairs checkpoint (verified XY displacement > 5m). Sequential subprocess execution avoids the PhysX GPU Foundation singleton crash. Results are the mean ± std of the `rewbuffer` over the last 50 iterations. All ablation conditions are physically verified to produce walking policies.
 
 ### Architecture
 
@@ -116,14 +114,14 @@ Leave-one-out: each condition trains for 300 iterations with one term disabled (
 
 Each policy evaluated on the terrain type it was trained on:
 
-| Terrain | Mean Reward | ± Std | Max | Min | Mean Ep. Length |
-|---------|-------------|-------|-----|-----|----------------|
-| Flat | 22.07 | 5.30 | 26.37 | −1.52 | 942.4 |
-| Slopes | 0.62 | 0.85 | 2.34 | −2.11 | 86.4 |
-| Stairs | 4.10 | 4.17 | 14.60 | −13.20 | 313.1 |
-| Contact-Aware (v2) | −0.22 | 0.58 | 1.63 | −1.74 | 42.5 |
+| Terrain | Mean Reward | ± Std | Max | Min | Mean Ep. Length | XY Disp. | Speed |
+|---------|-------------|-------|-----|-----|----------------|----------|-------|
+| Flat | 25.85 | 2.13 | 27.88 | 10.95 | 991.1 | 10.57 m | 1.26 m/s |
+| Slopes | 0.87 | 0.95 | 2.51 | −2.31 | 87.0 | 1.95 m | 0.95 m/s |
+| Stairs | 18.96 | 9.10 | 26.86 | 0.12 | 806.3 | 5.64 m | 0.70 m/s |
+| Contact-Aware | −2.78 | 2.27 | 4.12 | −8.57 | 953.7 | 6.71 m | 0.83 m/s |
 
-Evaluation uses only the base Isaac Lab reward (no contact-aware wrapper), so all four rows are on the same scale. The **flat policy** achieves strong performance (22.07 mean, 942-step episodes), confirming the training converged well. The slopes/stairs/contact-aware policies were each trained on specific terrain configurations but are evaluated on the full mixed rough terrain (`Isaac-Velocity-Rough-Anymal-C-v0`), which includes terrain features beyond their training distribution — hence shorter episodes and lower rewards. The stairs policy shows the most variance (std=4.17) reflecting the difficulty of generalized stair climbing.
+Evaluation uses only the base Isaac Lab reward (no contact-aware wrapper), so all four rows are on the same scale. The **flat policy** achieves strong performance (25.85 mean, 991-step episodes). The slopes policy shows shorter episodes (87) because evaluation runs on the generic rough terrain env which includes terrain beyond its 0-15° training distribution. The **stairs policy** now achieves 18.96 mean reward with 806-step episodes (vs. 4.10/313 before retraining), confirming genuine stair traversal. The contact-aware policy shows negative base reward but 954-step survival — it optimizes for contact-aware terms not reflected in the base evaluation reward.
 
 ### Cross-Terrain Transfer (all policies on flat terrain)
 
@@ -136,16 +134,16 @@ Evaluation uses only the base Isaac Lab reward (no contact-aware wrapper), so al
 
 Cross-terrain transfer evaluation uses the `--eval_terrain` flag added to `evaluate_policy.py`. Run with active checkpoints to populate this table.
 
-### Physical Verification (flat policy, 500-step trajectory)
+### Physical Verification (all policies, 500-step trajectory)
 
-| Metric | Value | Pass? |
-|--------|-------|-------|
-| XY displacement | 2.89 m | ✓ (>0.5 m) |
-| Mean speed (steps 50+) | 0.29 m/s | ✓ (>0.05 m/s) |
-| Gait (any foot in swing) | 100% of steps | ✓ (>10%) |
-| Joint velocity | 0.016 rad/step | ✓ (sustained) |
+| Policy | XY Displacement | Max XY | Speed | Z Range | Status |
+|--------|----------------|--------|-------|---------|--------|
+| Flat | 10.57 m | 10.57 m | 1.26 m/s | 0.04 m | ✓ WALKING |
+| Slopes | 1.95 m | 2.22 m | 0.95 m/s | 0.84 m | ✓ WALKING |
+| Stairs | 5.64 m | 5.64 m | 0.70 m/s | 0.61 m | ✓ WALKING |
+| Contact-Aware | 6.71 m | 6.71 m | 0.83 m/s | 0.59 m | ✓ WALKING |
 
-**Checkpoint loading fix:** Previous evaluation reported 5–7 mean reward across all terrains. These values were from a **random policy** due to a `state_dict` key mismatch bug: the evaluation MLP used `self.net` (keys `net.0.weight`, ...) while rsl_rl v5 saves `self.mlp` (keys `mlp.0.weight`, ...). With `strict=False`, no keys matched and random weights were silently kept. Fixed in `scripts/runner_utils.py` using `OnPolicyRunner.load()`. All eval/trajectory/video scripts now import from `runner_utils`. Full results in `results/evaluation_*.json`.
+All four policies exceed the 1.0m XY displacement threshold over 500 steps, confirming genuine locomotion (not balancing). The stairs and contact-aware policies show z-range > 0.5m, consistent with stair climbing. Full results in `results/evaluation_*.json`.
 
 ---
 
@@ -155,9 +153,9 @@ This project is explicitly designed as a testbed for [MAD-TD](https://arxiv.org/
 
 **Why this problem is right for MAD-TD:** Stair locomotion involves discrete contact transitions — discontinuous dynamics that are notoriously high-variance for model-free policy gradient methods. A learned world model that accurately predicts ground contact events can provide lower-variance gradient estimates for the contact-aware reward terms. The `TensorDictVecEnvWrapper` already returns rsl_rl v5 `TensorDict` observations, which is the interface MAD-TD expects, making the swap from `OnPolicyRunner` to MAD-TD's runner a minimal change.
 
-**Which ablation conditions are most relevant (v2, bugs fixed):** `foot_slip_penalty` and `contact_timing_penalty` are confirmed meaningful — removing them improves reward by +72% and +41% respectively, confirming they are genuine constraints on gait quality. Both require predicting foot-ground contact at the next timestep, which is exactly the capability a world model should provide. The `energy_penalty` is the dominant constraint; a world model that predicts torque consequences of actions could recover this implicitly.
+**Which ablation conditions are most relevant (v3):** `terrain_clearance` is the most impactful term — removing it drops reward by 21%, confirming foot-lifting incentives are critical for stair traversal. `foot_slip_penalty` is the strongest constraint (+29% when removed) — predicting foot-ground contact at the next timestep is exactly the capability a world model should provide. Both require anticipating contact transitions, making them ideal targets for model-based RL.
 
-**Proposed experiment:** Initialize both PPO and MAD-TD from the contact_aware v2 checkpoint (best=77.2, 300 iters). Fine-tune for 300 more iterations. Compare: (1) reward at convergence, (2) env steps to reach reward=50 (about 80% of PPO best), (3) foot_slip and contact_timing raw values as gait quality proxies. The ablation provides PPO baseline numbers. Target sample efficiency metric: 7.9M steps for PPO (300 iters × 1024 envs × 24 steps/env).
+**Proposed experiment:** Initialize both PPO and MAD-TD from the contact_aware checkpoint (best=762.9, 500 iters). Fine-tune for 500 more iterations. Compare: (1) reward at convergence, (2) env steps to reach reward=500 (about 65% of PPO best), (3) terrain_clearance and foot_slip raw values as gait quality proxies. The ablation provides PPO baseline numbers. Target sample efficiency metric: 12.3M steps for PPO (500 iters × 1024 envs × 24 steps/env).
 
 ---
 
