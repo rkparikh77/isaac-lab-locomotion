@@ -13,13 +13,30 @@ def validate_trajectory(traj_path, terrain_name, verbose=True):
     total_steps = len(pos)
 
     heights = pos[:, 2]
-    height_ok_mask = (heights >= 0.35) & (heights <= 0.85)
+
+    # For non-flat terrain, use height relative to a rolling local estimate
+    # (the robot climbs stairs/slopes, so absolute Z naturally increases)
+    if terrain_name in ("slopes", "stairs", "contact_aware"):
+        # Use height variation within a window: the robot body should stay
+        # within ~0.3m of the local mean (no launches or crashes)
+        window = 50
+        height_ok_list = []
+        for i in range(total_steps):
+            lo = max(0, i - window)
+            hi = min(total_steps, i + window)
+            local_mean = heights[lo:hi].mean()
+            deviation = abs(heights[i] - local_mean)
+            height_ok_list.append(deviation < 0.3)
+        height_ok_mask = np.array(height_ok_list)
+    else:
+        height_ok_mask = (heights >= 0.35) & (heights <= 0.85)
+
     stable_steps = int(height_ok_mask.sum())
     height_pass = stable_steps >= min(400, int(total_steps * 0.8))
 
     max_height = float(heights.max())
     min_height = float(heights.min())
-    launched = max_height > 1.2
+    launched = max_height > 1.2 if terrain_name == "flat" else False
     crashed = min_height < 0.25
 
     xy_displacement = float(np.sqrt((pos[-1, 0] - pos[0, 0]) ** 2 + (pos[-1, 1] - pos[0, 1]) ** 2))

@@ -1,0 +1,118 @@
+{
+  "flat": {
+    "terrain": "flat",
+    "total_steps": 500,
+    "duty_cycles": [
+      0.582,
+      0.44,
+      0.54,
+      0.562
+    ],
+    "mean_duty_cycle": 0.531,
+    "diagonal_correlation": -0.9039107658033061,
+    "avg_swing_duration": [
+      11.61111111111111,
+      15.764705882352942,
+      12.11111111111111,
+      11.526315789473685
+    ],
+    "num_swing_phases": [
+      18,
+      17,
+      18,
+      19
+    ],
+    "step_frequency": 0.142,
+    "xy_displacement": 7.56629220466652,
+    "mean_speed": 0.8191577196121216,
+    "is_shuffling": false,
+    "is_trotting": true
+  },
+  "slopes": {
+    "terrain": "slopes",
+    "total_steps": 500,
+    "duty_cycles": [
+      0.598,
+      0.526,
+      0.702,
+      0.652
+    ],
+    "mean_duty_cycle": 0.6195,
+    "diagonal_correlation": -0.7233636033019324,
+    "avg_swing_duration": [
+      8.818181818181818,
+      10.772727272727273,
+      6.478260869565218,
+      6.0
+    ],
+    "num_swing_phases": [
+      22,
+      22,
+      23,
+      28
+    ],
+    "step_frequency": 0.188,
+    "xy_displacement": 5.01231700294888,
+    "mean_speed": 0.6700636148452759,
+    "is_shuffling": false,
+    "is_trotting": true
+  },
+  "stairs": {
+    "terrain": "stairs",
+    "total_steps": 500,
+    "duty_cycles": [
+      0.522,
+      0.508,
+      0.5,
+      0.47
+    ],
+    "mean_duty_cycle": 0.5,
+    "diagonal_correlation": -0.8437416842384136,
+    "avg_swing_duration": [
+      11.380952380952381,
+      8.166666666666666,
+      11.523809523809524,
+      12.045454545454545
+    ],
+    "num_swing_phases": [
+      21,
+      30,
+      21,
+      22
+    ],
+    "step_frequency": 0.186,
+    "xy_displacement": 11.943541449056761,
+    "mean_speed": 1.2840603590011597,
+    "is_shuffling": false,
+    "is_trotting": true
+  },
+  "contact_aware": {
+    "terrain": "contact_aware",
+    "total_steps": 500,
+    "duty_cycles": [
+      0.258,
+      0.478,
+      0.302,
+      0.29
+    ],
+    "mean_duty_cycle": 0.332,
+    "diagonal_correlation": -0.5598028966463027,
+    "avg_swing_duration": [
+      25.142857142857142,
+      17.4,
+      24.928571428571427,
+      24.071428571428573
+    ],
+    "num_swing_phases": [
+      14,
+      15,
+      14,
+      14
+    ],
+    "step_frequency": 0.112,
+    "xy_displacement": 5.860467295551219,
+    "mean_speed": 0.6902065873146057,
+    "is_shuffling": false,
+    "is_trotting": true
+  }
+}

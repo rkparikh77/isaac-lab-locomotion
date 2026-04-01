@@ -3,9 +3,9 @@
   "eval_terrain": "slopes",
   "checkpoint": "/workspace/checkpoints/slopes/best_model.pt",
   "num_episodes": 100,
-  "mean_reward": 26.049534521102906,
-  "std_reward": 2.7627971831894214,
-  "max_reward": 27.73324966430664,
-  "min_reward": 6.807757377624512,
-  "episode_length_mean": 983.5
+  "mean_reward": 25.94328537940979,
+  "std_reward": 3.0535574473183993,
+  "max_reward": 27.871706008911133,
+  "min_reward": 8.378336906433105,
+  "episode_length_mean": 980.87
 }

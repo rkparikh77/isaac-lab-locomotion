@@ -3,9 +3,9 @@
   "eval_terrain": "stairs",
   "checkpoint": "/workspace/checkpoints/stairs/best_model.pt",
   "num_episodes": 100,
-  "mean_reward": 25.030661983489992,
-  "std_reward": 1.6967322009707317,
-  "max_reward": 27.639177322387695,
-  "min_reward": 12.316736221313477,
-  "episode_length_mean": 994.7
+  "mean_reward": 25.358536100387575,
+  "std_reward": 1.7956709775607596,
+  "max_reward": 27.748796463012695,
+  "min_reward": 10.758709907531738,
+  "episode_length_mean": 995.39
 }
