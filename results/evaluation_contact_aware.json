@@ -3,9 +3,9 @@
   "eval_terrain": "contact_aware",
   "checkpoint": "/workspace/checkpoints/contact_aware/best_model.pt",
   "num_episodes": 100,
-  "mean_reward": -2.780528038740158,
-  "std_reward": 2.2698849796546594,
-  "max_reward": 4.116803169250488,
-  "min_reward": -8.571863174438477,
-  "episode_length_mean": 953.74
+  "mean_reward": -1.9810456973314285,
+  "std_reward": 2.78825273522383,
+  "max_reward": 5.816798210144043,
+  "min_reward": -9.322297096252441,
+  "episode_length_mean": 995.39
 }

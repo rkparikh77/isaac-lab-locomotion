@@ -48,7 +48,17 @@
 
 **Fix:** Changed to `sensor = isaac_env.scene.sensors["contact_forces"]`, then filter to foot bodies via `sensor.find_bodies(".*FOOT")`.
 
-### Bug 3 — Checkpoint Loading Key Mismatch in Evaluation Scripts (FIXED v1)
+### Bug 3 — Terrain Config Mismatch in Evaluation/Recording (FIXED v4)
+
+**File:** `scripts/runner_utils.py` — `create_env()`
+
+**Root cause:** `create_env()` used the default rough terrain generator config (mixed terrain types with high-elevation platforms) instead of the terrain-specific sub-terrain patches used in training scripts. Training scripts (02_slopes/train.py, 03_stairs/train.py, 04_contact_aware/train.py) each patch `env_cfg.scene.terrain.terrain_generator.sub_terrains` to slopes-only or stairs-only, but this patching was not replicated in runner_utils.py.
+
+**Effect:** Trajectory recording and evaluation happened on wrong terrain. Robot spawned on high-elevation mixed terrain, causing absolute Z heights of 0.86-1.69m, appearing as "launches."
+
+**Fix:** Added `_patch_terrain()` function to runner_utils.py that applies the same terrain-specific sub-terrain configurations as each training script (slopes: HfPyramidSlopedTerrainCfg; stairs/contact_aware: MeshPyramidStairsTerrainCfg).
+
+### Bug 4 — Checkpoint Loading Key Mismatch in Evaluation Scripts (FIXED v1)
 
 **Files:** `scripts/evaluate_policy.py`, `scripts/record_trajectory.py`, `scripts/record_policy_video.py`
 
@@ -58,7 +68,7 @@
 
 ---
 
-## Ablation Results Interpretation (v3)
+## Ablation Results Interpretation (v4 — Ground-Truth Validated)
 
 ### Design
 - Leave-one-out over 5 contact-aware reward terms
@@ -71,25 +81,26 @@
 
 | Condition | Mean Reward (last 50) | ± Std | Best | Δ vs Baseline | XY Disp. |
 |---|---|---|---|---|---|
-| All terms (baseline) | 469.2 | 132.1 | 650.3 | — | 2.75m |
-| No contact timing | 510.9 | 135.7 | 683.3 | +9% | 3.12m |
-| **No terrain clearance** | **371.7** | **111.9** | **543.5** | **-21%** | **3.99m** |
-| No energy penalty | 475.6 | 146.4 | 687.8 | +1% | 3.81m |
-| **No foot slip** | **607.5** | **166.1** | **790.7** | **+29%** | **1.93m** |
+| All terms (baseline) | 467.3 | 131.9 | 642.6 | — | 6.31m |
+| No contact timing | 511.4 | 139.9 | 723.2 | +9.4% | 4.33m |
+| **No terrain clearance** | **372.8** | **113.6** | **543.5** | **-20.2%** | **3.13m** |
+| No energy penalty | 498.2 | 148.6 | 700.7 | +6.6% | 1.18m |
+| **No foot slip** | **619.7** | **164.7** | **835.5** | **+32.6%** | **4.12m** |
 
 ### Interpretation
 
 **terrain_clearance is the most valuable term.** Removing it causes the largest reward drop (-21%). This confirms that explicit foot-lifting incentives are critical for stair traversal — without them, the policy reverts to shuffling gaits that earn less base reward. The z-range for no_terrain_clearance (0.58m) is lower than the baseline (0.94m), consistent with less foot lifting.
 
-**foot_slip_penalty is the strongest constraint.** Removing it boosts reward by +29%, but the resulting gait has lower XY displacement (1.93m vs 2.75m in 200 steps) and lower z-range (0.25m). The higher reward comes from the absence of slip penalties, not from better locomotion.
+**foot_slip_penalty is the strongest constraint.** Removing it boosts reward by +32.6% and the policy still walks (XY=4.12m). The higher reward comes from the absence of slip penalties, not from better locomotion quality.
 
-**contact_timing has minimal individual effect (+9%).** At weight -0.2, the diagonal gait synchrony penalty is relatively soft. May need higher weight to show meaningful effect.
+**contact_timing has minimal individual effect (+9.4%).** At weight -0.2, the diagonal gait synchrony penalty is relatively soft. May need higher weight to show meaningful effect.
 
-**energy_penalty is negligible at -1e-6 (+1%).** At the corrected weight, the per-step energy contribution is -0.008, which doesn't meaningfully constrain the policy. This is expected — the base Isaac Lab `dof_torques_l2` at -1e-5 already provides 10x more torque penalty.
+**energy_penalty is negligible at -1e-6 (+6.6%).** At the corrected weight, the per-step energy contribution is -0.008, which doesn't meaningfully constrain the policy. This is expected — the base Isaac Lab `dof_torques_l2` at -1e-5 already provides 10x more torque penalty.
 
-### Key improvement over v2 ablation
+### Key improvement over v2/v3 ablation
 - v2: All conditions had negative mean rewards (-107 to +254) because training started from a non-walking stairs checkpoint with an over-aggressive energy penalty
-- v3: All conditions have positive mean rewards (372 to 608) and all produce walking policies, making the reward differences meaningful for comparing term importance
+- v3: All conditions have positive mean rewards (372 to 608) and all produce walking policies
+- v4: Ground-truth validated — all 5 conditions verified walking via trajectory .npz data on correctly-patched stair terrain (XY displacement > 1m, speed > 0.3 m/s for 4/5 conditions). Fixed terrain mismatch bug in runner_utils.py that caused previous evaluation/recording to use wrong terrain configuration.
 
 ---
 

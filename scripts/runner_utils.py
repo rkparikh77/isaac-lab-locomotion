@@ -101,6 +101,54 @@ def build_eval_runner_cfg() -> dict:
     }
 
 
+def _patch_terrain(env_cfg, terrain: str) -> None:
+    """Patch terrain generator sub_terrains to match training configuration."""
+    import math
+    import isaaclab.terrains as terrain_gen
+
+    if terrain == "slopes":
+        # Match experiments/02_slopes/train.py: pyramid slopes only, 0-15 degrees
+        slope_min_rad = math.radians(0.0)
+        slope_max_rad = math.radians(15.0)
+        env_cfg.scene.terrain.terrain_generator.sub_terrains = {
+            "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+                proportion=0.5,
+                slope_range=(slope_min_rad, slope_max_rad),
+                platform_width=2.0,
+                border_width=0.25,
+            ),
+            "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
+                proportion=0.5,
+                slope_range=(slope_min_rad, slope_max_rad),
+                platform_width=2.0,
+                border_width=0.25,
+            ),
+        }
+    elif terrain in ("stairs", "contact_aware"):
+        # Match experiments/03_stairs/train.py and 04_contact_aware/train.py:
+        # pyramid stairs only, step height 5-20cm, step width midpoint of 25-40cm = 32.5cm
+        step_width_mid = (0.25 + 0.40) / 2.0
+        env_cfg.scene.terrain.terrain_generator.sub_terrains = {
+            "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+                proportion=0.5,
+                step_height_range=(0.05, 0.20),
+                step_width=step_width_mid,
+                platform_width=3.0,
+                border_width=1.0,
+                holes=False,
+            ),
+            "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+                proportion=0.5,
+                step_height_range=(0.05, 0.20),
+                step_width=step_width_mid,
+                platform_width=3.0,
+                border_width=1.0,
+                holes=False,
+            ),
+        }
+    # flat: no patch needed, uses default flat terrain
+
+
 def create_env(terrain: str, num_envs: int) -> ExtrasTrackingWrapper:
     """Create and wrap the Isaac Lab vectorised environment."""
     env_id = TERRAIN_ENV_MAP[terrain]
@@ -108,6 +156,7 @@ def create_env(terrain: str, num_envs: int) -> ExtrasTrackingWrapper:
     env_cfg.scene.num_envs = num_envs
     if hasattr(env_cfg, "curriculum"):
         env_cfg.curriculum = None
+    _patch_terrain(env_cfg, terrain)
     gym_env = gym.make(env_id, cfg=env_cfg, render_mode=None)
     rsl_env = RslRlVecEnvWrapper(gym_env)
     return ExtrasTrackingWrapper(rsl_env)
